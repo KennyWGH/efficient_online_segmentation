@@ -2,8 +2,8 @@
  * Copyright 2021 WANG Guanhua
  */
 
-#ifndef ADVANCED_SEGMENTATION_ADVANCED_SEGMENTATION_H_
-#define ADVANCED_SEGMENTATION_ADVANCED_SEGMENTATION_H_
+#ifndef EFFICIENT_ONLINE_SEGMENTATION_H_
+#define EFFICIENT_ONLINE_SEGMENTATION_H_
 
 #include <vector>
 #include <array>
@@ -18,12 +18,12 @@
 
 class AdvancedSegmentation {
   public:
-    AdvancedSegmentation(const AdvancedSegmentationParams& paramsIn = AdvancedSegmentationParams());
+    AdvancedSegmentation(const SegmentationParams& paramsIn = SegmentationParams());
 
     AdvancedSegmentation(const AdvancedSegmentation&) = delete;
     AdvancedSegmentation& operator=(const AdvancedSegmentation&) = delete;
 
-    void UpdateParameters(const AdvancedSegmentationParams& paramsIn);
+    void UpdateParameters(const SegmentationParams& paramsIn);
 
     void Segment(pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudIn, std::vector<int>* labelsOut, bool useIntensity=false);
 
@@ -32,7 +32,7 @@ class AdvancedSegmentation {
     std::vector<BasicLine>& GetExtractedLines();
 
   private:
-    AdvancedSegmentationParams params_;
+    SegmentationParams params_;
     std::vector<SmartSector> sectors_;
 
     std::uint64_t num_received_msgs = 0;
@@ -44,4 +44,4 @@ class AdvancedSegmentation {
 
 };
 
-#endif // ADVANCED_SEGMENTATION_ADVANCED_SEGMENTATION_H_
+#endif // EFFICIENT_ONLINE_SEGMENTATION_H_

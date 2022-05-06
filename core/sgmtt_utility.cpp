@@ -5,6 +5,6 @@
 #include "sgmtt_utility.h"
 
 
-AdvancedSegmentationParams::AdvancedSegmentationParams() {}
+SegmentationParams::SegmentationParams() {}
 
 

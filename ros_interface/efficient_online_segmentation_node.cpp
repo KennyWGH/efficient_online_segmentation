@@ -17,7 +17,7 @@
 #include <pcl/point_types.h>
 #include <opencv2/core/core.hpp>
 
-#include "core/advanced_segmentation.h"
+#include "core/efficient_online_segmentation.h"
 
 // ###########################################################################
 
@@ -144,7 +144,7 @@ int main(int argc, char** argv) {
         pubExtractedLines = node_handle.advertise<visualization_msgs::MarkerArray>
             (pub_extractedlines_topic,1);
 
-        AdvancedSegmentationParams params;
+        SegmentationParams params;
         node_handle.param("kNumSectors", params.kNumSectors, params.kNumSectors);
         node_handle.param("kColsPerSector", params.kColsPerSector, params.kColsPerSector);
         node_handle.param("kSensorHeight", params.kSensorHeight, params.kSensorHeight);

@@ -431,8 +431,13 @@ LineLabel SmartSector::JudgeLineLAbel(SmartLine& smartLine, const std::vector<pc
     }
 
     // check whether this line is a ground line.
-    if (std::abs(smartLine.k_)<kGroundSlopeTolerance
-        && std::abs(smartLine.b_+kSensorHeight)<kGroundYInterceptTolerance )
+    if ((smartLine.bins_.size()>2
+         &&std::abs(smartLine.k_)<kGroundSlopeTolerance
+         && std::abs(smartLine.b_+kSensorHeight)<kGroundYInterceptTolerance)
+        || 
+        (smartLine.bins_.size()==2
+         &&std::abs(smartLine.k_)<0.01745 /*1 or 2 degree*/
+         && std::abs(smartLine.b_+kSensorHeight)<0.5*kGroundYInterceptTolerance) )
     {
         return LineLabel::GROUND;
     }

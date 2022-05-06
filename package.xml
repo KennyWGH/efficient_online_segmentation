@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>advanced_segmentation</name>
+  <name>efficient_online_segmentation</name>
   <version>0.0.1</version>
   <description>advanced segmentation of ground and wall.</description>
   

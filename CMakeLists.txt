@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(advanced_segmentation)
+project(efficient_online_segmentation)
 
 set(CMAKE_CXX_STANDARD 11)
 
@@ -45,14 +45,14 @@ link_directories(
 ##############################################
 
 
-add_executable(advanced_segmentation_node 
-    ros_interface/advanced_segmentation_node.cpp
-    core/advanced_segmentation.cpp
+add_executable(efficient_online_segmentation_node 
+    ros_interface/efficient_online_segmentation_node.cpp
+    core/efficient_online_segmentation.cpp
     core/sgmtt_utility.cpp
     core/sector.cpp
 )
 
-target_link_libraries(advanced_segmentation_node 
+target_link_libraries(efficient_online_segmentation_node 
     PUBLIC
     ${catkin_LIBRARIES} 
     ${PCL_LIBRARIES} 

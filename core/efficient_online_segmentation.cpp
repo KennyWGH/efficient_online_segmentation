@@ -2,22 +2,20 @@
  * Copyright 2021 WANG Guanhua
  */
 
-#include "advanced_segmentation.h"
+#include "efficient_online_segmentation.h"
 
 #include <chrono>
 #include <cmath>
-#include <memory>
-#include <thread>
 #include <ctime>
 #include <iomanip>
 
 
-AdvancedSegmentation::AdvancedSegmentation(const AdvancedSegmentationParams& paramsIn)
+AdvancedSegmentation::AdvancedSegmentation(const SegmentationParams& paramsIn)
 {
     UpdateParameters(paramsIn);
 }
 
-void AdvancedSegmentation::UpdateParameters(const AdvancedSegmentationParams& paramsIn)
+void AdvancedSegmentation::UpdateParameters(const SegmentationParams& paramsIn)
 {
     params_ = paramsIn;
     sectors_.clear();

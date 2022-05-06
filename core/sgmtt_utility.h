@@ -2,12 +2,12 @@
  * Copyright 2021 WANG Guanhua
  */
 
-#ifndef ADVANCED_SEGMENTATION_SGMTT_UTILITY_H_
-#define ADVANCED_SEGMENTATION_SGMTT_UTILITY_H_
+#ifndef EFFICIENT_ONLINE_SEGMENTATION_SGMTT_UTILITY_H_
+#define EFFICIENT_ONLINE_SEGMENTATION_SGMTT_UTILITY_H_
 
 #include<cmath>
 
-struct AdvancedSegmentationParams {
+struct SegmentationParams {
 
     // LiDAR parameters. (VLP16)
     int kLidarRows = 16;
@@ -36,11 +36,11 @@ struct AdvancedSegmentationParams {
     float kWallLineMinBinNum = 3;       // consider using this to replace MinLength.
     float kWallPointLineDistThres = 0.1;
 
-    AdvancedSegmentationParams();
+    SegmentationParams();
 };
 
 
 
 
 
-#endif // ADVANCED_SEGMENTATION_SGMTT_UTILITY_H_
+#endif // EFFICIENT_ONLINE_SEGMENTATION_SGMTT_UTILITY_H_

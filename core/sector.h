@@ -2,8 +2,8 @@
  * Copyright 2021 WANG Guanhua
  */
 
-#ifndef ADVANCED_SEGMENTATION_SECTOR_H_
-#define ADVANCED_SEGMENTATION_SECTOR_H_
+#ifndef EFFICIENT_ONLINE_SEGMENTATION_SECTOR_H_
+#define EFFICIENT_ONLINE_SEGMENTATION_SECTOR_H_
 
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
@@ -119,7 +119,7 @@ class SmartSector {
     float kSensorHeight;    // = 1.3;
     // Identify ground.
     float kGroundSameLineTolerance;     // = 0.035;    // 2 degree, around 0.1m/3m
-    float kGroundSlopeTolerance;        // = 0.182; // 10 degrees
+    float kGroundSlopeTolerance;        // = 0.182; // 10 degrees(0.182), 2 degree(0.035), 1 degree(0.01745)
     float kGroundYInterceptTolerance;   // = 0.2;
     float kGroundPointLineDistThres;    // = 0.1;
     // Identify wall.
@@ -144,4 +144,4 @@ class SmartSector {
 
 };
 
-#endif /* ADVANCED_SEGMENTATION_SECTOR_H_ */
+#endif /* EFFICIENT_ONLINE_SEGMENTATION_SECTOR_H_ */
