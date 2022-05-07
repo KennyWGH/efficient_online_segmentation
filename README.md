@@ -20,9 +20,9 @@ A chinese version can be seen on my personal Zhihu homepage, click [here](https:
 This project is also light-weight in dependencies, only **PCL & OpenCV** are required, you can easily install these two by `apt-get install`. Note that PCL is essential while OpenCV is only for visualization of range image. A developer should take no trouble to remove OpenCV dependency with just a little bit modification on original codes.
 
 ## 5. Compile & Run
-Once you have solved the dependencies problem, just execute `catkin_make` and `roslaunch advanced_segmentation advanced_segmentation.launch`. See the *.launch* file for detail.
+Once you have solved the dependencies problem, just execute `catkin_make` and `roslaunch efficient_online_segmentation efficient_online_segmentation.launch`. See the *.launch* file for detail.
 
-By default, **VLP-16 LiDAR scanner** or any other 16-rings LiDAR are supported. If you want to see how **32/64/128 LiDAR scanners** work, just modify LiDAR related parameters in `sgmtt_utility.h/AdvancedSegmentationParams`.
+By default, **VLP-16 LiDAR scanner** or any other 16-rings LiDAR are supported. If you want to see how **32/64/128 LiDAR scanners** work, just modify LiDAR related parameters in `sgmtt_utility.h/SegmentationParams`.
 
 ## 6. Others
 ...
