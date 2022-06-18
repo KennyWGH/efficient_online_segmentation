@@ -48,8 +48,9 @@ link_directories(
 add_executable(efficient_online_segmentation_node 
     ros_interface/efficient_online_segmentation_node.cpp
     core/efficient_online_segmentation.cpp
-    core/sgmtt_utility.cpp
     core/sector.cpp
+    core/segmentation_utility.cpp
+    core/adaptive_ground_plane_estimator.cpp
 )
 
 target_link_libraries(efficient_online_segmentation_node 

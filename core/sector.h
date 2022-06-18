@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 WANG Guanhua
+ * Copyright 2021 Guanhua WANG
  */
 
 #ifndef EFFICIENT_ONLINE_SEGMENTATION_SECTOR_H_
@@ -49,6 +49,7 @@ struct SmartLine {
     float locOriginY = 0;
     float locCosTheta = 1;
     float locSinTheta = 0;
+    float locTanTheta = 0; // first two points slope (or tan).
     float last_point_x = 0;
     float last_point_y = 0;
 
@@ -61,13 +62,13 @@ struct SmartLine {
     float b_ = 0;
 
     // params. 
-    float kWallLineSlopeThres = 0.2588; /*if CosTheta<0.2588(>75deg), a possible wall line.*/
-    float kMaxDistBtwnRings = 10.0;      /* interval btwn rings should be less than X meters.*/
+    float kWallSlopeThres; /* if abs(TanTheta)>3.7321, i.e., 105deg>Theta>75deg, a possible wall line.*/
+    float kMaxDistBtwnRings;  /* 6.0; interval btwn rings should be less than X meters.*/
 
-    SmartLine();
+    SmartLine(const float& wall_slope, const float& max_ring_dist=6);
     void Reset();
     bool TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint, 
-                        const float& groundTolerance, const float& wallTolerance);
+          const float& groundSameLineTolerance, const float& wallSameLineTolerance);
     BasicLine GetLine(const std::vector<pcl::PointXYZI>& binVec, 
                         const LineLabel& labelID);
 
@@ -84,9 +85,9 @@ class SmartSector {
   public:
 
     SmartSector();
-    SmartSector(const unsigned int& n_bins,
+    SmartSector(const int& this_sector_id,
+            const unsigned int& n_bins,
             const float& sensor_height,
-            const int& this_sector_id = -1,
             const float& ground_same_line_tolerance = 0.035,
             const float& ground_slope_tolerance = 0.182,
             const float& ground_intercept_tolerance = 0.2,
@@ -115,13 +116,15 @@ class SmartSector {
 
     // General params.
     int kSectorId = -1;
-    int kNumBins;           // = 16;
-    float kSensorHeight;    // = 1.3;
+    int kNumBins;           // = 16 or 32;
+    float kSensorHeight;    // = 0.0;
+
     // Identify ground.
-    float kGroundSameLineTolerance;     // = 0.035;    // 2 degree, around 0.1m/3m
-    float kGroundSlopeTolerance;        // = 0.182; // 10 degrees(0.182), 2 degree(0.035), 1 degree(0.01745)
+    float kGroundSameLineTolerance;     // = 0.035;   // 2 degree(0.035, around 0.1m/3m) 
+    float kGroundSlopeTolerance;        // = 0.1763;  // 10 degrees(0.1763), 2 degree(0.035), 1 degree(0.0175)
     float kGroundYInterceptTolerance;   // = 0.2;
     float kGroundPointLineDistThres;    // = 0.1;
+
     // Identify wall.
     float kWallSameLineTolerance;       // = 0.1051; // 6 degree(0.1051), 2 degree(0.035)
     float kWallSlopeTolerance;          // = 3.73;  // 85 degrees(11.43), 80 degrees(5.67), 75 degrees(3.73)
@@ -144,4 +147,4 @@ class SmartSector {
 
 };
 
-#endif /* EFFICIENT_ONLINE_SEGMENTATION_SECTOR_H_ */
+#endif // EFFICIENT_ONLINE_SEGMENTATION_SECTOR_H_

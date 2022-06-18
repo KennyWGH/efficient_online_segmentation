@@ -1,19 +1,47 @@
 
-# By default, VLP-16 LiDAR is used.
-# For other LiDARs, you can modify LiDAR parameters in "sgmtt.utility.h".
+# By default, VLP-16 LiDAR and HDL-32 LiDAR are supported.
 
+# ROS interface.
+sub_cloud_topic:          "/velodyne_points_0" # /velodyne_points_0
+pub_cloud_topic:          "/EOS_segmted_cloud"
+pub_rangeimage_topic:     "/EOS_range_image"
+pub_extractedlines_topic: "/EOS_extracted_lines"
+base_link_frame_id:       "base_link"
+lidar_frame_id:           "velodyne"
+
+# # LiDAR type. (velodyne VLP-16)
+# kLidarRows: 16
+# kLidarCols: 1800
+# kLidarHorizRes: 0.2       # all in degree
+# kLidarVertRes:  2.0
+# kLidarVertFovMax:  15.0
+# kLidarVertFovMin: -15.0
+# kLidarProjectionError: 0.5
+
+# LiDAR type. (velodyne HDL-32, +10.67° ~ -30.67°)
+kLidarRows: 32
+kLidarCols: 2169
+kLidarHorizRes: 0.166       # all in degree (10Hz)
+kLidarVertRes:  1.333
+kLidarVertFovMax:  10.67
+kLidarVertFovMin: -30.67
+kLidarProjectionError: 0.5
+
+# basic parameters.
+# kSensorHeight: 1.3 
+kSensorHeight: 1.832                # Ground to LiDAR. (1.3 for personal dataset, 1.832 for UrbanLoco)
+kSensorRoll: 0.0                    # degree.
+kSensorPitch: 0.0                   # degree.
 kNumSectors: 360                    # Number of angular segments.
-kColsPerSector: 5                   # kLidarCols/kNumSectors
-kSensorHeight: 1.3                  # Height from ground surface to LiDAR sensor.
 
 # Identify ground.
-kGroundSameLineTolerance: 0.035       # 2 degree(0.035), around 0.1m/3m
-kGroundSlopeTolerance: 0.182          # 10 degrees(0.182)
-kGroundYInterceptTolerance: 0.2       # the intercept(b) of a line.
-kGroundPointLineDistThres: 0.1        # Point-Line maximum distance to be classified as ground.
+kGroundSameLineTolerance: 2       # 2 degree(0.035, around 0.1m/3m)
+kGroundSlopeTolerance: 10          # 10 degrees(0.176)
+kGroundYInterceptTolerance: 0.5       # the intercept(b) of a line.
+kGroundPointLineDistThres: 0.1        # Maximum point-line distance for a point to be labelled as ground.
 
 # Identify wall.
-kWallSameLineTolerance: 0.1051        # 6 degree(0.1051), 2 degree(0.035)
-kWallSlopeTolerance: 3.73             # 85 degrees(11.43), 80 degrees(5.67), 75 degrees(3.73)
+kWallSameLineTolerance: 10        # 10 degrees(0.176), 6 degree(0.1051), 3 degree(0.0524)
+kWallSlopeTolerance: 75             # 85 degrees(11.43), 80 degrees(5.67), 75 degrees(3.73)
 kWallLineMinBinNum: 3                 # a wall line should cover at least 3 rings.
-kWallPointLineDistThres: 0.1          # Point-Line maximum distance to be classified as wall.
+kWallPointLineDistThres: 0.1          # Maximum point-line distance for a point to be labelled as wall.

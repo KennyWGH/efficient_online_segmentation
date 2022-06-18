@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 WANG Guanhua
+ * Copyright 2021 Guanhua WANG
  */
 
 #include "sector.h"
@@ -40,7 +40,8 @@ BasicLine::BasicLine(const LineLabel& labelIn,
     :label(labelIn),start_point(startPoint),end_point(endPoint)
 {}
 
-SmartLine::SmartLine(){}
+SmartLine::SmartLine(const float& wall_slope, const float& max_ring_dist)
+    :kWallSlopeThres(wall_slope), kMaxDistBtwnRings(max_ring_dist) {}
 
 void SmartLine::Reset() 
 {
@@ -52,13 +53,14 @@ void SmartLine::Reset()
     locOriginY = 0;
     locCosTheta = 1;
     locSinTheta = 0;
+    locTanTheta = 0;
     last_point_x = 0;
     last_point_y = 0;
     isCalculated = false;
 }
 
 bool SmartLine::TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint, 
-                            const float& groundTolerance, const float& wallTolerance)
+        const float& groundSameLineTolerance, const float& wallSameLineTolerance)
 {
     /** @brief Note that we use the first two points define a New Local Coordinate System,
      * all slopes btwn two adjacent points are calculated under this coordinate!
@@ -73,7 +75,7 @@ bool SmartLine::TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint,
         start_bin = newBin;
         end_bin = newBin;
         bins_.push_back(newBin);
-        locOriginX = binPoint.intensity;
+        locOriginX = binPoint.intensity; /*x-y range*/
         locOriginY = binPoint.z;
         return true;
     }
@@ -87,26 +89,28 @@ bool SmartLine::TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint,
         slopes_.push_back(0);
         locCosTheta = deltaX/dist;
         locSinTheta = deltaY/dist;
+        locTanTheta = deltaY/deltaX;
         last_point_x = dist;
         last_point_y = 0;
         return true;
 
     }
     else /*accumulated_bins>=2*/ {
+        // calculate point coordinate in local frame.
         float curr_point_x = (binPoint.intensity-locOriginX)*locCosTheta 
                             +(binPoint.z-locOriginY)*locSinTheta;
         float curr_point_y = (binPoint.z-locOriginY)*locCosTheta 
                             -(binPoint.intensity-locOriginX)*locSinTheta;
-        float curr_k = (curr_point_y-last_point_y)/(curr_point_x-last_point_x);
-        if (locCosTheta<kWallLineSlopeThres) /*a possible wall line.*/ {
+        float curr_k = (curr_point_y - last_point_y) / (curr_point_x - last_point_x);
+        if (std::abs(locTanTheta)>kWallSlopeThres) /*a possible wall line.*/ {
             for (const auto& existed_slope : slopes_) {
-                if (std::abs(existed_slope-curr_k)>wallTolerance) return false;
+                if (std::abs(existed_slope - curr_k) > wallSameLineTolerance) return false;
             }
         }
         else /*other line.*/ {
             for (const auto& existed_slope : slopes_) {
-                if (std::abs(existed_slope-curr_k)>groundTolerance
-                    || curr_point_x-last_point_x>kMaxDistBtwnRings ) return false;
+                if (std::abs(existed_slope - curr_k) > groundSameLineTolerance
+                    || curr_point_x - last_point_x > kMaxDistBtwnRings ) return false;
             }
         }
 
@@ -138,9 +142,9 @@ BasicLine SmartLine::GetLine(const std::vector<pcl::PointXYZI>& binVec, const Li
 
 SmartSector::SmartSector(){}
 
-SmartSector::SmartSector(const unsigned int& n_bins,
+SmartSector::SmartSector(const int& this_sector_id,
+                const unsigned int& n_bins,
                 const float& sensor_height,
-                const int& this_sector_id,
                 const float& ground_same_line_tolerance,
                 const float& ground_slope_tolerance,
                 const float& ground_intercept_tolerance,
@@ -149,9 +153,9 @@ SmartSector::SmartSector(const unsigned int& n_bins,
                 const float& wall_slope_tolerance,
                 const float& wall_min_num_bins,
                 const float& wall_pointline_dist) 
-                : kNumBins(n_bins),
+                : kSectorId(this_sector_id),
+                kNumBins(n_bins),
                 kSensorHeight(sensor_height),
-                kSectorId(this_sector_id),
                 kGroundSameLineTolerance(ground_same_line_tolerance),
                 kGroundSlopeTolerance(ground_slope_tolerance),
                 kGroundYInterceptTolerance(ground_intercept_tolerance),
@@ -160,7 +164,6 @@ SmartSector::SmartSector(const unsigned int& n_bins,
                 kWallSlopeTolerance(wall_slope_tolerance),
                 kWallLineMinBinNum(wall_min_num_bins),
                 kWallPointLineDistThres(wall_pointline_dist)
-                
 {
     nanPoint.x = std::numeric_limits<float>::quiet_NaN();
     nanPoint.y = std::numeric_limits<float>::quiet_NaN();
@@ -175,9 +178,9 @@ SmartSector::SmartSector(const unsigned int& n_bins,
     for (auto& binPoint : sector_) {
         if (!pcl::isFinite(binPoint)) num_NanPoint++;
     }
-    std::cout << "SmartSector[id=" << kSectorId 
-                << "] initialized with [" << num_NanPoint 
-                << " out of " << sector_.size() << "] nan points. \n";
+    // std::cout << "SmartSector[id=" << kSectorId 
+    //             << "] initialized with [" << num_NanPoint 
+    //             << " out of " << sector_.size() << "] nan points. \n";
 }
 
 void SmartSector::Reset()
@@ -203,47 +206,48 @@ void SmartSector::AddPoint(const pcl::PointXYZI& pointIn, const int& pointIdx, c
 
     src_points_.emplace(pointIn,binIdx,pointIdx);
 
-    // // 'lowest as indicator' version.
-    // if (!pcl::isFinite(sector_[binIdx])) {
-    //     sector_[binIdx] = pointIn;
-    //     return;
-    // }
-    // if (pointIn.z < sector_[binIdx].z) sector_[binIdx] = pointIn;
-
-    // 'mean as indicator' version
+    // 'lowest as indicator' version.
     if (!pcl::isFinite(sector_[binIdx])) {
         sector_[binIdx] = pointIn;
-        sectorCounts_[binIdx]++;
         return;
     }
-    sector_[binIdx].x += pointIn.x;
-    sector_[binIdx].y += pointIn.y;
-    sector_[binIdx].z += pointIn.z;
-    sector_[binIdx].intensity += pointIn.intensity;
-    sectorCounts_[binIdx]++;
+    if (pointIn.z < sector_[binIdx].z) sector_[binIdx] = pointIn;
+
+    // // 'mean as indicator' version
+    // if (!pcl::isFinite(sector_[binIdx])) {
+    //     sector_[binIdx] = pointIn;
+    //     sectorCounts_[binIdx]++;
+    //     return;
+    // }
+    // sector_[binIdx].x += pointIn.x;
+    // sector_[binIdx].y += pointIn.y;
+    // sector_[binIdx].z += pointIn.z;
+    // sector_[binIdx].intensity += pointIn.intensity;
+    // sectorCounts_[binIdx]++;
 
 }
 
 void SmartSector::RunLineExtraction()
 {
     // debug
-    int NaNBins_num = 0;
+    int num_nan_bins = 0;
 
-    // 'mean as indicator' version
-    for (std::size_t i=0; i<sector_.size(); ++i) {
-        if (!pcl::isFinite(sector_[i]) || sectorCounts_[i]==0) continue;
-        sector_[i].x = sector_[i].x/sectorCounts_[i];
-        sector_[i].y = sector_[i].y/sectorCounts_[i];
-        sector_[i].z = sector_[i].z/sectorCounts_[i];
-        sector_[i].intensity = sector_[i].intensity/sectorCounts_[i];
-    }
+    // // 'mean as indicator' version
+    // for (std::size_t i=0; i<sector_.size(); ++i) {
+    //     if (!pcl::isFinite(sector_[i]) || sectorCounts_[i]==0) continue;
+    //     sector_[i].x = sector_[i].x/sectorCounts_[i];
+    //     sector_[i].y = sector_[i].y/sectorCounts_[i];
+    //     sector_[i].z = sector_[i].z/sectorCounts_[i];
+    //     sector_[i].intensity = sector_[i].intensity/sectorCounts_[i];
+    // }
 
     // extract line.
-    SmartLine smart_line;
+    SmartLine smart_line(3.73 /*75degree*/);
     for (int i=0; i<sector_.size(); ++i) {
-        if ( !pcl::isFinite(sector_[i]) ) { NaNBins_num++; continue; }
+        if ( !pcl::isFinite(sector_[i]) ) { num_nan_bins++; continue; }
 
-        if ( smart_line.TryAddNewBin(i,sector_[i],kGroundSameLineTolerance,kWallSameLineTolerance) ) { /*do nothing*/ }
+        if (smart_line.TryAddNewBin(i,sector_[i],kGroundSameLineTolerance,kWallSameLineTolerance)) 
+        { /*do nothing*/ }
         else { /* current line ended. */
             LineLabel line_label = JudgeLineLAbel(smart_line, sector_);
             if (line_label!=LineLabel::NAL) {
@@ -275,13 +279,10 @@ void SmartSector::RunLineExtraction()
         }
     }
 
-    // if (NaNBins_num>kNumBins-3) {
-    //     std::cout << "WARNING! SmartSector[id=" << kSectorId << "] has too many NaN bins!" << "\n";
-    // }
     // std::cout << "SmartSector[id=" << kSectorId 
     //             << "]: ground bins [" << ground_bins_.size() 
     //             << "], wll bins [" << wall_bins_.size() << "], [" 
-    //             << line_check_times << "," << ground_times << "," << wall_times << "], [" << NaNBins_num << "] NaN bins. \n";
+    //             << line_check_times << "," << ground_times << "," << wall_times << "], [" << num_nan_bins << "] NaN bins. \n";
 
     // label GROUND point, collect their indices.
     std::size_t binPointer = 0;
@@ -304,7 +305,7 @@ void SmartSector::RunLineExtraction()
             }
             if (point.bin_index!=ground_bins_[binPointer]) continue;
             /* now, judge whether a point belongs to ground (according to height diff). */
-            if (point.point.z-sector_[point.bin_index].z<kGroundPointLineDistThres) {
+            if (std::abs(point.point.z-sector_[point.bin_index].z)<kGroundPointLineDistThres) {
                 ground_points_indices_.push_back(point.original_index);
             }
         }
@@ -424,7 +425,8 @@ LineLabel SmartSector::JudgeLineLAbel(SmartLine& smartLine, const std::vector<pc
         if (!pcl::isFinite(smartLine.start_point) || !pcl::isFinite(smartLine.end_point)) return LineLabel::NAL;
         float deltaX = smartLine.end_point.intensity-smartLine.start_point.intensity;
         float deltaY = smartLine.end_point.z-smartLine.start_point.z;
-        smartLine.k_ = deltaY/deltaX;
+        // smartLine.k_ = deltaY/deltaX;           // strategy A. 
+        smartLine.k_ = smartLine.locTanTheta;   // strategy B. 
         smartLine.b_ = smartLine.start_point.z - smartLine.k_ * smartLine.start_point.intensity;
         smartLine.length_ = std::sqrt(deltaY*deltaY+deltaX*deltaX);
         smartLine.isCalculated = true;
@@ -436,14 +438,17 @@ LineLabel SmartSector::JudgeLineLAbel(SmartLine& smartLine, const std::vector<pc
          && std::abs(smartLine.b_+kSensorHeight)<kGroundYInterceptTolerance)
         || 
         (smartLine.bins_.size()==2
-         &&std::abs(smartLine.k_)<0.01745 /*1 or 2 degree*/
+         &&std::abs(smartLine.k_)<0.01745 /*1 degree*/
+         && std::abs(smartLine.start_point.z)<kGroundYInterceptTolerance
+         && std::abs(smartLine.end_point.z)<kGroundYInterceptTolerance
          && std::abs(smartLine.b_+kSensorHeight)<0.5*kGroundYInterceptTolerance) )
     {
         return LineLabel::GROUND;
     }
     // check whether this line is a wall line.
     else if (std::abs(smartLine.k_)>kWallSlopeTolerance
-            && smartLine.bins_.size()>=kWallLineMinBinNum ) {
+            && smartLine.bins_.size()>=kWallLineMinBinNum ) 
+    {
         return LineLabel::WALL;
     }
 
