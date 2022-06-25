@@ -62,13 +62,19 @@ struct SmartLine {
     float b_ = 0;
 
     // params. 
-    float kWallSlopeThres; /* if abs(TanTheta)>3.7321, i.e., 105deg>Theta>75deg, a possible wall line.*/
-    float kMaxDistBtwnRings;  /* 6.0; interval btwn rings should be less than X meters.*/
+    float kWallSlopeThres;          // 85 degrees(11.43), 80 degrees(5.67), 75 degrees(3.73)
+    float kWallSameLineSlopeThres;  // 6 degree(0.1051), 2 degree(0.035)
+    float kGroundSlopeThres;        // 10 degrees(0.1763), 2 degree(0.035), 1 degree(0.0175)
+    float kGroundSameLineSlopeThres;// 2 degree(0.035), 1 degree(0.0175)
+    float kGroundMaxDistBtwnRings;  // 6.0, dist btwn rings should be less than X meters.
 
-    SmartLine(const float& wall_slope, const float& max_ring_dist=6);
+    SmartLine(const float& wall_slope_t=3.73, 
+              const float& wall_same_line_slope_t=0.1051, 
+              const float& ground_slope_t=0.1763, 
+              const float& ground_same_line_slope_t=0.035, 
+              const float& ground_max_ring_dist=8);
     void Reset();
-    bool TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint, 
-          const float& groundSameLineTolerance, const float& wallSameLineTolerance);
+    bool TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint);
     BasicLine GetLine(const std::vector<pcl::PointXYZI>& binVec, 
                         const LineLabel& labelID);
 
@@ -90,7 +96,7 @@ class SmartSector {
             const float& sensor_height,
             const float& ground_same_line_tolerance = 0.035,
             const float& ground_slope_tolerance = 0.182,
-            const float& ground_intercept_tolerance = 0.2,
+            const float& ground_intercept_tolerance = 0.5,
             const float& ground_pointline_dist = 0.1,
             const float& wall_same_line_tolerance = 0.1051,
             const float& wall_slope_tolerance = 3.73,
@@ -99,6 +105,8 @@ class SmartSector {
 
     // Essential pipeline.
     void Reset();
+    std::shared_ptr<const std::vector<pcl::PointXYZI>> GetSectorDataPtr();
+    void SetReferenceSector(const std::shared_ptr<const std::vector<pcl::PointXYZI>>& sect_ptr_in);
     void AddPoint(const pcl::PointXYZI& pointIn, const int& pointIdx, const int& binIdx);
     void RunLineExtraction();
 
@@ -107,12 +115,12 @@ class SmartSector {
     std::vector<int>& GetWallPointIndices();
     std::vector<BasicLine>& GetExtractedLines();
 
-    // Query from outside. (1-ground, 2-wall, 0-neither)
+    // Query from outside. (0-neither, 1-ground, 2-wall)
     int IdentifyExternalPoint(const pcl::PointXYZI& pointIn, const int& binIdx);
 
   public:
 
-   LineLabel JudgeLineLAbel(SmartLine& smartLine, const std::vector<pcl::PointXYZI>& binVec);
+    LineLabel JudgeLineLAbel(SmartLine& smartLine, const std::vector<pcl::PointXYZI>& binVec);
 
     // General params.
     int kSectorId = -1;
@@ -122,28 +130,32 @@ class SmartSector {
     // Identify ground.
     float kGroundSameLineTolerance;     // = 0.035;   // 2 degree(0.035, around 0.1m/3m) 
     float kGroundSlopeTolerance;        // = 0.1763;  // 10 degrees(0.1763), 2 degree(0.035), 1 degree(0.0175)
-    float kGroundYInterceptTolerance;   // = 0.2;
+    float kGroundYInterceptTolerance;   // = 0.5;
     float kGroundPointLineDistThres;    // = 0.1;
 
     // Identify wall.
-    float kWallSameLineTolerance;       // = 0.1051; // 6 degree(0.1051), 2 degree(0.035)
-    float kWallSlopeTolerance;          // = 3.73;  // 85 degrees(11.43), 80 degrees(5.67), 75 degrees(3.73)
+    float kWallSameLineTolerance;       // = 0.1051;  // 6 degree(0.1051), 2 degree(0.035)
+    float kWallSlopeTolerance;          // = 3.73;    // 85 degrees(11.43), 80 degrees(5.67), 75 degrees(3.73)
     float kWallLineMinBinNum;           // = 3;       // consider using this to replace MinLength.
     float kWallPointLineDistThres;      // = 0.1;
 
-    pcl::PointXYZI nanPoint;
+    pcl::PointXYZI NanPoint;
 
     // all the following variables/containers need to be reset before next round.
     std::set<IndexedPoint> src_points_;
-    std::vector<pcl::PointXYZI> sector_; 
-    std::vector<int> sectorCounts_; 
-
-    std::vector<BasicLine> extracted_lines_;
+    std::shared_ptr<std::vector<pcl::PointXYZI>> sector_data_ptr_; 
+    std::vector<int> sector_counts_; 
+    std::shared_ptr<const std::vector<pcl::PointXYZI>> other_sector_ptr_;
 
     std::vector<int> ground_bins_;
     std::vector<int> ground_points_indices_;
     std::vector<int> wall_bins_;
     std::vector<int> wall_points_indices_;
+
+    std::vector<BasicLine> extracted_lines_;
+
+    // non-algorithm variables.
+    bool kDebugInfo = false;
 
 };
 

@@ -14,7 +14,7 @@
 EfficientOnlineSegmentation::EfficientOnlineSegmentation(const SegmentationParams& params)
 {
     ResetParameters(params);
-    cloud_in_base_.reset(new pcl::PointCloud<pcl::PointXYZI>());
+    common_cloud_in_base_.reset(new pcl::PointCloud<pcl::PointXYZI>());
     custom_cloud_in_base_.reset(new pcl::PointCloud<PointXYZIRT>());
 }
 
@@ -28,7 +28,7 @@ void EfficientOnlineSegmentation::ResetParameters(const SegmentationParams& para
     for (int i=0; i<sectors_.size(); i++) {
         sectors_[i] = SmartSector(i/*sector id*/,
                                 params_.kLidarRows,
-                                0, // params_.kSensorHeight,
+                                0/*fake sensor height from ground*/,
                                 params_.kGroundSameLineTolerance,
                                 params_.kGroundSlopeTolerance,
                                 params_.kGroundYInterceptTolerance,
@@ -38,17 +38,23 @@ void EfficientOnlineSegmentation::ResetParameters(const SegmentationParams& para
                                 params_.kWallLineMinBinNum,
                                 params_.kWallPointLineDistThres);
     }
+    for (int i=0; i<sectors_.size(); i++) {
+        if (i == sectors_.size()-1) {
+            sectors_[i].SetReferenceSector(sectors_[0].GetSectorDataPtr());
+            continue;
+        }
+        sectors_[i].SetReferenceSector(sectors_[i+1].GetSectorDataPtr());
+    }
     sensor_pose_in_base_ = params_.kBaseToSensor;
-    std::cout << "sensor_pose_in_base_: " << std::endl 
-        << sensor_pose_in_base_.matrix() << std::endl 
-        << " " << std::endl;
+    std::cout << "Set `sensor_pose_in_base_` as: " << std::endl 
+        << sensor_pose_in_base_.matrix() << std::endl << std::endl;
 }
 
 // implementation 1.
 void EfficientOnlineSegmentation::Segment(pcl::PointCloud<pcl::PointXYZI>::Ptr& cloud_data, 
                                     std::vector<int>* labels_out, bool use_intensity) 
 {
-    ordinary_cloud_used = true;
+    common_cloud_used = true;
     custom_cloud_used = false;
     num_received_msgs++;
     if (kPrintLog) {
@@ -60,13 +66,11 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<pcl::PointXYZI>::Ptr& 
 
     // step01 register every and each point into corresponding sector!
     for (auto& sector : sectors_) {sector.Reset();}
-    pcl::transformPointCloud(*cloud_data, *cloud_in_base_, sensor_pose_in_base_);
+    pcl::transformPointCloud(*cloud_data, *common_cloud_in_base_, sensor_pose_in_base_);
     range_image_ = cv::Mat::zeros(params_.kLidarRows, params_.kLidarCols, CV_32FC1);
     for (std::size_t i=0; i<cloud_data->size(); ++i)
     {
-        // if (cloud_in_base_->points[i].z > 1.0) continue;
-        if (use_intensity) {cloud_data->points[i].intensity=kOtherIntensity;}
-        // if (cloud_in_base_->points[i].z > 1.0) continue;
+        if (use_intensity) {cloud_data->points[i].intensity=kUnknownIntensity;}
         float ang_azimuth = std::atan2(cloud_data->points[i].y, cloud_data->points[i].x);
         while (ang_azimuth < 0) { ang_azimuth += 2*M_PI; } /* from [-pi,+pi] to [0, 2pi] */
         float xy_range = std::sqrt( cloud_data->points[i].x*cloud_data->points[i].x
@@ -83,7 +87,7 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<pcl::PointXYZI>::Ptr& 
             || colIdx < 0 || colIdx >= params_.kLidarCols) {
             continue;
         }
-        int sectorIdx = floor(colIdx/params_.kColsPerSector/*5*/);
+        int sectorIdx = floor(colIdx/params_.kColsPerSector);
         if (sectorIdx<0 || sectorIdx>=params_.kNumSectors) {
             continue;
         }
@@ -91,9 +95,9 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<pcl::PointXYZI>::Ptr& 
         float* rangeImgRowPtr = range_image_.ptr<float>(rowIdx);
         rangeImgRowPtr[colIdx] = xy_range;
 
-        // Note that here we must pass in point in base (or ground) frame!
-        // Remember that the `intensity` represents x-y range!!!!
-        pcl::PointXYZI point3D = cloud_in_base_->points[i];
+        // Note that here we must pass point in base (or ground) frame!
+        // Also remember that the `intensity` is used as x-y range!!
+        pcl::PointXYZI point3D = common_cloud_in_base_->points[i];
         point3D.intensity = std::sqrt(point3D.x*point3D.x
                                      +point3D.y*point3D.y);
         sectors_[sectorIdx].AddPoint(point3D, i/*original index*/, rowIdx/*bin id*/);
@@ -118,13 +122,13 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<pcl::PointXYZI>::Ptr& 
     // step03 project labels to original `cloud_data`.
     labels_out->clear();
     labels_out->resize(cloud_data->size());
-    std::fill(labels_out->begin(), labels_out->end(), 0); /* 0(unknown), 1(ground), 2(others) */
+    std::fill(labels_out->begin(), labels_out->end(), kUnknownLabel); 
     for (const auto& index : ground_indices) {
-        (*labels_out)[index] = 1;
+        (*labels_out)[index] = kGroundLabel;
         if (use_intensity) {cloud_data->points[index].intensity=kGroundIntensity;}
     }
     for (const auto& index : wall_indices) {
-        (*labels_out)[index] = 2;
+        (*labels_out)[index] = kWallLabel;
         if (use_intensity) {cloud_data->points[index].intensity=kWallIntensity;}
     }
     if (use_intensity) { /* expand intensity interval to [0, 255]. */
@@ -146,7 +150,7 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<pcl::PointXYZI>::Ptr& 
                   << "%), Wall points " << wall_indices.size() << "(" << wall_percentage 
                   << "%). " << std::endl 
                   << "Took [" << timePhase1 << "," << timePhase2 << "," 
-                  << timePhase3 << "]=" << timeTotal << "s, [avg" 
+                  << timePhase3 << "]=" << timeTotal << "s, [avg=" 
                   << accumulated_run_time/num_received_msgs << "s]." 
                   << std::endl << std::endl;
     }
@@ -157,7 +161,7 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<pcl::PointXYZI>::Ptr& 
 void EfficientOnlineSegmentation::Segment(pcl::PointCloud<PointXYZIRT>::Ptr& cloud_data, 
                                     std::vector<int>* labels_out, bool use_intensity) 
 {
-    ordinary_cloud_used = false;
+    common_cloud_used = false;
     custom_cloud_used = true;
     num_received_msgs++;
     if (kPrintLog) {
@@ -170,25 +174,24 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<PointXYZIRT>::Ptr& clo
     // step01 register every and each point into corresponding sector!
     for (auto& sector : sectors_) {sector.Reset();}
     pcl::transformPointCloud(*cloud_data, *custom_cloud_in_base_, sensor_pose_in_base_);
+    // pcl::transformPointCloud(*cloud_data, *custom_cloud_in_base_, params_.kBaseToSenTF);
     range_image_ = cv::Mat::zeros(params_.kLidarRows, params_.kLidarCols, CV_32FC1);
     for (std::size_t i=0; i<cloud_data->size(); ++i)
     {
-        // if (custom_cloud_in_base_->points[i].z > 1.0) continue;
-        if (use_intensity) {cloud_data->points[i].intensity=kOtherIntensity;}
-        // if (custom_cloud_in_base_->points[i].z > 1.0) continue;
+        if (use_intensity) {cloud_data->points[i].intensity=kUnknownIntensity;}
         float ang_azimuth = std::atan2(cloud_data->points[i].y, cloud_data->points[i].x);
         while (ang_azimuth < 0) { ang_azimuth += 2*M_PI; } /* from [-pi,+pi] to [0, 2pi] */
-        float xy_range = std::sqrt( cloud_data->points[i].x*cloud_data->points[i].x
-                                    +cloud_data->points[i].y*cloud_data->points[i].y );
+        float xy_range = std::sqrt( cloud_data->points[i].x * cloud_data->points[i].x
+                                    + cloud_data->points[i].y * cloud_data->points[i].y );
 
-        int rowIdx=0, colIdx=0;
+        int rowIdx = 0, colIdx = 0;
         rowIdx = cloud_data->points[i].ring;
         colIdx = floor(ang_azimuth*params_.kLidarHorizResInv);
         if (rowIdx < 0 || rowIdx >= params_.kLidarRows 
             || colIdx < 0 || colIdx >= params_.kLidarCols) {
             continue;
         }
-        int sectorIdx = floor(colIdx/params_.kColsPerSector/*5*/);
+        int sectorIdx = floor(colIdx/params_.kColsPerSector);
         if (sectorIdx<0 || sectorIdx>=params_.kNumSectors) {
             continue;
         }
@@ -196,8 +199,8 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<PointXYZIRT>::Ptr& clo
         float* rangeImgRowPtr = range_image_.ptr<float>(rowIdx);
         rangeImgRowPtr[colIdx] = xy_range;
 
-        // Note that here we must pass in point in base (or ground) frame!
-        // Remember that the `intensity` represents x-y range!!!!
+        // Note that here we must pass point in base (or ground) frame!
+        // Also remember that the `intensity` is used as x-y range!!
         pcl::PointXYZI point3D;
         point3D.x = custom_cloud_in_base_->points[i].x;
         point3D.y = custom_cloud_in_base_->points[i].y;
@@ -226,13 +229,13 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<PointXYZIRT>::Ptr& clo
     // step03 project labels to original `cloud_data`.
     labels_out->clear();
     labels_out->resize(cloud_data->size());
-    std::fill(labels_out->begin(), labels_out->end(), 0); /* 0(unknown), 1(ground), 2(others) */
+    std::fill(labels_out->begin(), labels_out->end(), kUnknownLabel);
     for (const auto& index : ground_indices) {
-        (*labels_out)[index] = 1;
+        (*labels_out)[index] = kGroundLabel;
         if (use_intensity) {cloud_data->points[index].intensity=kGroundIntensity;}
     }
     for (const auto& index : wall_indices) {
-        (*labels_out)[index] = 2;
+        (*labels_out)[index] = kWallLabel;
         if (use_intensity) {cloud_data->points[index].intensity=kWallIntensity;}
     }
     if (use_intensity) { /* expand intensity interval to [0, 255]. */
@@ -254,7 +257,7 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<PointXYZIRT>::Ptr& clo
                   << "%), Wall points " << wall_indices.size() << "(" << wall_percentage 
                   << "%). " << std::endl 
                   << "Took [" << timePhase1 << "," << timePhase2 << "," 
-                  << timePhase3 << "]=" << timeTotal << "s, [avg" 
+                  << timePhase3 << "]=" << timeTotal << "s, [avg=" 
                   << accumulated_run_time/num_received_msgs << "s]." 
                   << std::endl << std::endl;
     }
@@ -262,18 +265,18 @@ void EfficientOnlineSegmentation::Segment(pcl::PointCloud<PointXYZIRT>::Ptr& clo
 }
 
 pcl::PointCloud<pcl::PointXYZI>::Ptr
-EfficientOnlineSegmentation::GetTransformedCloud()
+EfficientOnlineSegmentation::GetTransformedCommonCloud()
 {
     if (custom_cloud_used) {
         std::cout << "ERROR! wrong cloud type used." << std::endl;
     }
-    return cloud_in_base_;
+    return common_cloud_in_base_;
 }
 
 pcl::PointCloud<PointXYZIRT>::Ptr
 EfficientOnlineSegmentation::GetTransformedCustomCloud()
 {
-    if (ordinary_cloud_used) {
+    if (common_cloud_used) {
         std::cout << "ERROR! wrong cloud type used." << std::endl;
     }
     return custom_cloud_in_base_;

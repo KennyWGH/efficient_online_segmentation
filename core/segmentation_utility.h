@@ -31,7 +31,7 @@ POINT_CLOUD_REGISTER_POINT_STRUCT (PointXYZIRT,
 
 struct SegmentationParams {
 
-    // LiDAR parameters. (velodyne VLP-16 / velodyne HDL-32)
+    // LiDAR parameters for velodyne VLP-16. (see yaml file for velodyne HDL-32)
     int kLidarRows = 16;
     int kLidarCols = 1800;
     float kLidarHorizRes = 0.2/180.*M_PI;       // radius.
@@ -40,8 +40,7 @@ struct SegmentationParams {
     float kLidarVertFovMin = -15.0/180.*M_PI;   // radius.
     float kLidarProjectionError = 0.5/180.*M_PI; // Maximum permissible error of row projection.
 
-    // LiDAR related deduced parameters, which should 
-    // help algorithm calculation.
+    // LiDAR related deduced parameters, which should help algorithm calculation.
     float kLidarHorizResInv = 1/kLidarHorizRes;                         // require re-calculation ***.
     float kLidarVertResInv = 1/kLidarVertRes;                           // require re-calculation ***.
     float kLidarVertAngMin = kLidarVertFovMin - kLidarProjectionError;  // require re-calculation ***.
@@ -50,10 +49,13 @@ struct SegmentationParams {
     // Basic segmentation parameters.
     int kNumSectors = 360;
     int kColsPerSector = kLidarCols/kNumSectors;                        // require re-calculation ***.
-    float kSensorHeight = 1.0;
-    float kSensorRoll = 0.0;                                            // radius.
-    float kSensorPitch = 0.0;                                           // radius.
-    Eigen::Affine3f kBaseToSensor;                                     // require re-calculation ***.
+    float kSensorHeight = 1.0;                                          // meters. [not used]
+    float kSensorRoll = 0.0;                                            // radius. [not used]
+    float kSensorPitch = 0.0;                                           // radius. [not used]
+    Eigen::Vector3f kExtrinsicTrans = Eigen::Vector3f::Zero();
+    Eigen::Matrix3f kExtrinsicRot = Eigen::Matrix3f::Identity();
+    Eigen::Matrix4f kExtrinsicTF = Eigen::Matrix4f::Zero();             // equal to kBaseToSensor ***.
+    Eigen::Affine3f kBaseToSensor = Eigen::Affine3f::Identity();        // require re-calculation ***.
 
     // Identify ground.
     float kGroundSameLineTolerance = 0.035; // radius. // 2 degree(tan[2]=0.035, around 0.1m/3m)
@@ -69,7 +71,7 @@ struct SegmentationParams {
 
     SegmentationParams();
     SegmentationParams& operator=(const SegmentationParams& other);
-    void UpdateInternalParams();
+    bool UpdateInternalParams();
     void PrintAllParams(const std::string& title);
 };
 

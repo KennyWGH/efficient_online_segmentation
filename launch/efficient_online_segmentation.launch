@@ -3,11 +3,6 @@
 
   <param name="/use_sim_time" value="true" />
 
-  <!--- manage TF -->
-  <!-- <param name="robot_description"
-    textfile="$(find efficient_online_segmentation)/launch/robot.urdf" />
-  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" /> -->
-
   <!-- ROS Node -->
   <node name="efficient_online_segmentation" pkg="efficient_online_segmentation" 
         type="efficient_online_segmentation_node" output="screen">
@@ -15,19 +10,15 @@
         file="$(find efficient_online_segmentation)/launch/segmentation_params.yaml"/>
   </node>
 
-
   <!-- ROS Rviz -->
-  <node name="rviz_AdvancedSegmentation" pkg="rviz" type="rviz" required="true"
+  <node name="rviz_EOS" pkg="rviz" type="rviz" required="true"
     args="-d $(find efficient_online_segmentation)/launch/efficient_online_segmentation.rviz" />
 
 
-  <!-- 个人数据集|建筑物间峡谷环境 -->
-  <!-- <arg name="bag_filename" default="/home/wgh/####.bag"/>  -->
-
-  <!-- 网络公开数据集|香港数据集32线| -->
-  <arg name="bag_filename" default="/mnt/ubuntu_disk/aaa_3d_bags/HK-Data20190117.bag"/> 
+  <!-- 网络公开数据集|香港数据集32线 -->
+  <arg name="bag_filename" default="**YourRosBagDir**/HK-Data20190117.bag"/> 
 
   <!-- ROS Bag Play -->
-  <node pkg="rosbag" type="play" name="rosbag_play" args="--clock -s 0 -r 2 $(arg bag_filename)"/>
+  <node pkg="rosbag" type="play" name="rosbag_play" args="--clock -s 100 -r 1.0 $(arg bag_filename)"/>
 
 </launch>

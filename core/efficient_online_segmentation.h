@@ -17,7 +17,7 @@
 #include <opencv2/core/core.hpp> // only for visualization.
 
 #include "segmentation_utility.h"
-#include "sector.h"
+#include "smart_sector.h"
 
 class EfficientOnlineSegmentation {
   public:
@@ -38,7 +38,7 @@ class EfficientOnlineSegmentation {
                 bool use_intensity=false);
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr
-    GetTransformedCloud();
+    GetTransformedCommonCloud();
     pcl::PointCloud<PointXYZIRT>::Ptr
     GetTransformedCustomCloud();
 
@@ -49,19 +49,23 @@ class EfficientOnlineSegmentation {
     SegmentationParams params_;
     std::vector<SmartSector> sectors_;
     Eigen::Affine3f sensor_pose_in_base_;
-    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in_base_;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr common_cloud_in_base_;
     pcl::PointCloud<PointXYZIRT>::Ptr custom_cloud_in_base_;
-    bool ordinary_cloud_used = false;
+    bool common_cloud_used = false;
     bool custom_cloud_used = false;
     cv::Mat range_image_;
     std::vector<BasicLine> extracted_lines_;
 
+    const float kUnknownIntensity = 180;
+    const float kGroundIntensity = 100;
+    const float kWallIntensity = 10;
+    const int kUnknownLabel = 0;  /* 0(unknown), 1(ground), 2(wall), 3(TODO) */
+    const int kGroundLabel = 1;   /* 0(unknown), 1(ground), 2(wall), 3(TODO) */
+    const int kWallLabel = 2;     /* 0(unknown), 1(ground), 2(wall), 3(TODO) */
+    bool kPrintLog = true;
+
     std::uint64_t num_received_msgs = 0;
     double accumulated_run_time = 0;
-    float kGroundIntensity = 100;
-    float kWallIntensity = 10;
-    float kOtherIntensity = 180;
-    bool kPrintLog = true;
 
 };
 

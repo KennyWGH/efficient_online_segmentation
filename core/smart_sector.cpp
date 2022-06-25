@@ -2,7 +2,7 @@
  * Copyright 2021 Guanhua WANG
  */
 
-#include "sector.h"
+#include "smart_sector.h"
 #include <cmath>
 #include <climits>
 
@@ -40,8 +40,17 @@ BasicLine::BasicLine(const LineLabel& labelIn,
     :label(labelIn),start_point(startPoint),end_point(endPoint)
 {}
 
-SmartLine::SmartLine(const float& wall_slope, const float& max_ring_dist)
-    :kWallSlopeThres(wall_slope), kMaxDistBtwnRings(max_ring_dist) {}
+SmartLine::SmartLine(const float& wall_slope_t, 
+                    const float& wall_same_line_slope_t, 
+                    const float& ground_slope_t, 
+                    const float& ground_same_line_slope_t, 
+                    const float& ground_max_ring_dist)
+    :kWallSlopeThres(wall_slope_t), 
+    kWallSameLineSlopeThres(wall_same_line_slope_t),
+    kGroundSlopeThres(ground_slope_t),
+    kGroundSameLineSlopeThres(ground_same_line_slope_t),
+    kGroundMaxDistBtwnRings(ground_max_ring_dist) 
+{}
 
 void SmartLine::Reset() 
 {
@@ -59,8 +68,7 @@ void SmartLine::Reset()
     isCalculated = false;
 }
 
-bool SmartLine::TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint, 
-        const float& groundSameLineTolerance, const float& wallSameLineTolerance)
+bool SmartLine::TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint)
 {
     /** @brief Note that we use the first two points define a New Local Coordinate System,
      * all slopes btwn two adjacent points are calculated under this coordinate!
@@ -83,7 +91,7 @@ bool SmartLine::TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint,
         float deltaX = binPoint.intensity - locOriginX;
         float deltaY = binPoint.z - locOriginY;
         float dist = std::sqrt(deltaX*deltaX + deltaY*deltaY);
-        if (dist>kMaxDistBtwnRings) return false;
+        if (dist > kGroundMaxDistBtwnRings) return false;
         end_bin = newBin;
         bins_.push_back(newBin);
         slopes_.push_back(0);
@@ -93,7 +101,6 @@ bool SmartLine::TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint,
         last_point_x = dist;
         last_point_y = 0;
         return true;
-
     }
     else /*accumulated_bins>=2*/ {
         // calculate point coordinate in local frame.
@@ -102,17 +109,18 @@ bool SmartLine::TryAddNewBin(const int& newBin, const pcl::PointXYZI& binPoint,
         float curr_point_y = (binPoint.z-locOriginY)*locCosTheta 
                             -(binPoint.intensity-locOriginX)*locSinTheta;
         float curr_k = (curr_point_y - last_point_y) / (curr_point_x - last_point_x);
-        if (std::abs(locTanTheta)>kWallSlopeThres) /*a possible wall line.*/ {
+        if (std::abs(locTanTheta) > kWallSlopeThres) /*a possible wall line.*/ {
             for (const auto& existed_slope : slopes_) {
-                if (std::abs(existed_slope - curr_k) > wallSameLineTolerance) return false;
+                if (std::abs(existed_slope - curr_k) > kWallSameLineSlopeThres) return false;
             }
         }
-        else /*other line.*/ {
+        else if (std::abs(locTanTheta) < kGroundSlopeThres) /*a possible ground line.*/ {
             for (const auto& existed_slope : slopes_) {
-                if (std::abs(existed_slope - curr_k) > groundSameLineTolerance
-                    || curr_point_x - last_point_x > kMaxDistBtwnRings ) return false;
+                if (std::abs(existed_slope - curr_k) > kGroundSameLineSlopeThres
+                    || curr_point_x - last_point_x > kGroundMaxDistBtwnRings ) return false;
             }
         }
+        else /*other line.*/ { return false; }
 
         end_bin = newBin;
         bins_.push_back(newBin);
@@ -165,36 +173,50 @@ SmartSector::SmartSector(const int& this_sector_id,
                 kWallLineMinBinNum(wall_min_num_bins),
                 kWallPointLineDistThres(wall_pointline_dist)
 {
-    nanPoint.x = std::numeric_limits<float>::quiet_NaN();
-    nanPoint.y = std::numeric_limits<float>::quiet_NaN();
-    nanPoint.z = std::numeric_limits<float>::quiet_NaN();
-    nanPoint.intensity = -1;
-    sector_.resize(kNumBins);
-    sectorCounts_.resize(kNumBins);
+    NanPoint.x = std::numeric_limits<float>::quiet_NaN();
+    NanPoint.y = std::numeric_limits<float>::quiet_NaN();
+    NanPoint.z = std::numeric_limits<float>::quiet_NaN();
+    NanPoint.intensity = -1;
+    sector_data_ptr_.reset(new std::vector<pcl::PointXYZI>);
+    sector_data_ptr_->resize(kNumBins);
+    sector_counts_.resize(kNumBins);
     Reset();
 
-    // check initialization.
-    int num_NanPoint = 0;
-    for (auto& binPoint : sector_) {
-        if (!pcl::isFinite(binPoint)) num_NanPoint++;
+    // Initialize sector data.
+    int num_nan_bins = 0;
+    for (auto& binPoint : (*sector_data_ptr_)) {
+        if (!pcl::isFinite(binPoint)) num_nan_bins++;
     }
-    // std::cout << "SmartSector[id=" << kSectorId 
-    //             << "] initialized with [" << num_NanPoint 
-    //             << " out of " << sector_.size() << "] nan points. \n";
+    if (kDebugInfo) {
+        std::cout << "SmartSector[id=" << kSectorId 
+                << "] initialized with [" << num_nan_bins 
+                << " out of " << sector_data_ptr_->size() << "] nan bins." << std::endl;
+    }
+
 }
 
 void SmartSector::Reset()
 {
     src_points_.clear();
-    std::fill(sector_.begin(), sector_.end(), nanPoint);
-    std::fill(sectorCounts_.begin(), sectorCounts_.end(), 0);
-
-    extracted_lines_.clear();
+    std::fill(sector_data_ptr_->begin(), sector_data_ptr_->end(), NanPoint);
+    std::fill(sector_counts_.begin(), sector_counts_.end(), 0);
 
     ground_bins_.clear();
     ground_points_indices_.clear();
     wall_bins_.clear();
     wall_points_indices_.clear();
+
+    extracted_lines_.clear();
+}
+
+std::shared_ptr<const std::vector<pcl::PointXYZI>> SmartSector::GetSectorDataPtr()
+{
+    return sector_data_ptr_;
+}
+
+void SmartSector::SetReferenceSector(const std::shared_ptr<const std::vector<pcl::PointXYZI>>& sect_ptr_in)
+{
+    other_sector_ptr_ = sect_ptr_in;
 }
 
 void SmartSector::AddPoint(const pcl::PointXYZI& pointIn, const int& pointIdx, const int& binIdx)
@@ -207,23 +229,23 @@ void SmartSector::AddPoint(const pcl::PointXYZI& pointIn, const int& pointIdx, c
     src_points_.emplace(pointIn,binIdx,pointIdx);
 
     // 'lowest as indicator' version.
-    if (!pcl::isFinite(sector_[binIdx])) {
-        sector_[binIdx] = pointIn;
+    if (!pcl::isFinite((*sector_data_ptr_)[binIdx])) {
+        (*sector_data_ptr_)[binIdx] = pointIn;
         return;
     }
-    if (pointIn.z < sector_[binIdx].z) sector_[binIdx] = pointIn;
+    if (pointIn.z < (*sector_data_ptr_)[binIdx].z) (*sector_data_ptr_)[binIdx] = pointIn;
 
-    // // 'mean as indicator' version
-    // if (!pcl::isFinite(sector_[binIdx])) {
-    //     sector_[binIdx] = pointIn;
-    //     sectorCounts_[binIdx]++;
+    // // 'mean as bin indicator' version
+    // if (!pcl::isFinite((*sector_data_ptr_)[binIdx])) {
+    //     (*sector_data_ptr_)[binIdx] = pointIn;
+    //     sector_counts_[binIdx]++;
     //     return;
     // }
-    // sector_[binIdx].x += pointIn.x;
-    // sector_[binIdx].y += pointIn.y;
-    // sector_[binIdx].z += pointIn.z;
-    // sector_[binIdx].intensity += pointIn.intensity;
-    // sectorCounts_[binIdx]++;
+    // (*sector_data_ptr_)[binIdx].x += pointIn.x;
+    // (*sector_data_ptr_)[binIdx].y += pointIn.y;
+    // (*sector_data_ptr_)[binIdx].z += pointIn.z;
+    // (*sector_data_ptr_)[binIdx].intensity += pointIn.intensity;
+    // sector_counts_[binIdx]++;
 
 }
 
@@ -232,26 +254,28 @@ void SmartSector::RunLineExtraction()
     // debug
     int num_nan_bins = 0;
 
-    // // 'mean as indicator' version
-    // for (std::size_t i=0; i<sector_.size(); ++i) {
-    //     if (!pcl::isFinite(sector_[i]) || sectorCounts_[i]==0) continue;
-    //     sector_[i].x = sector_[i].x/sectorCounts_[i];
-    //     sector_[i].y = sector_[i].y/sectorCounts_[i];
-    //     sector_[i].z = sector_[i].z/sectorCounts_[i];
-    //     sector_[i].intensity = sector_[i].intensity/sectorCounts_[i];
+    // // 'mean as bin indicator' version
+    // for (std::size_t i=0; i<sector_data_ptr_->size(); ++i) {
+    //     if (!pcl::isFinite((*sector_data_ptr_)[i]) || sector_counts_[i]==0) continue;
+    //     (*sector_data_ptr_)[i].x = (*sector_data_ptr_)[i].x/sector_counts_[i];
+    //     (*sector_data_ptr_)[i].y = (*sector_data_ptr_)[i].y/sector_counts_[i];
+    //     (*sector_data_ptr_)[i].z = (*sector_data_ptr_)[i].z/sector_counts_[i];
+    //     (*sector_data_ptr_)[i].intensity = (*sector_data_ptr_)[i].intensity/sector_counts_[i];
     // }
 
     // extract line.
-    SmartLine smart_line(3.73 /*75degree*/);
-    for (int i=0; i<sector_.size(); ++i) {
-        if ( !pcl::isFinite(sector_[i]) ) { num_nan_bins++; continue; }
+    SmartLine smart_line(kWallSlopeTolerance, 
+                        kWallSameLineTolerance,
+                        kGroundSlopeTolerance,
+                        kGroundSameLineTolerance);
+    for (int i=0; i<sector_data_ptr_->size(); ++i) {
+        if ( !pcl::isFinite((*sector_data_ptr_)[i]) ) { num_nan_bins++; continue; }
 
-        if (smart_line.TryAddNewBin(i,sector_[i],kGroundSameLineTolerance,kWallSameLineTolerance)) 
-        { /*do nothing*/ }
+        if (smart_line.TryAddNewBin(i,(*sector_data_ptr_)[i])) { /*need to do nothing*/ }
         else { /* current line ended. */
-            LineLabel line_label = JudgeLineLAbel(smart_line, sector_);
+            LineLabel line_label = JudgeLineLAbel(smart_line, (*sector_data_ptr_));
             if (line_label!=LineLabel::NAL) {
-                extracted_lines_.push_back(smart_line.GetLine(sector_, line_label));
+                extracted_lines_.push_back(smart_line.GetLine((*sector_data_ptr_), line_label));
             }
             if (line_label==LineLabel::GROUND) {
                 ground_bins_.insert(ground_bins_.end(), smart_line.bins_.begin(), smart_line.bins_.end());
@@ -261,13 +285,13 @@ void SmartSector::RunLineExtraction()
             }
             smart_line.Reset();
             /* start new line after reset. */
-            smart_line.TryAddNewBin(i,sector_[i],kGroundSameLineTolerance,kWallSameLineTolerance);
+            smart_line.TryAddNewBin(i,(*sector_data_ptr_)[i]);
         }
 
-        if (i==sector_.size()-1) {
-            LineLabel line_label = JudgeLineLAbel(smart_line, sector_);
+        if (i==sector_data_ptr_->size()-1) {
+            LineLabel line_label = JudgeLineLAbel(smart_line, (*sector_data_ptr_));
             if (line_label!=LineLabel::NAL) {
-                extracted_lines_.push_back(smart_line.GetLine(sector_, line_label));
+                extracted_lines_.push_back(smart_line.GetLine((*sector_data_ptr_), line_label));
             }
             if (line_label==LineLabel::GROUND) {
                 ground_bins_.insert(ground_bins_.end(), smart_line.bins_.begin(), smart_line.bins_.end());
@@ -279,33 +303,37 @@ void SmartSector::RunLineExtraction()
         }
     }
 
-    // std::cout << "SmartSector[id=" << kSectorId 
-    //             << "]: ground bins [" << ground_bins_.size() 
-    //             << "], wll bins [" << wall_bins_.size() << "], [" 
-    //             << line_check_times << "," << ground_times << "," << wall_times << "], [" << num_nan_bins << "] NaN bins. \n";
+    if (kDebugInfo) {
+        std::cout << "SmartSector[id=" << kSectorId 
+                << "]: ground bins [" << ground_bins_.size() 
+                << "], wll bins [" << wall_bins_.size()
+                << "], nan bins [" << num_nan_bins 
+                << "], out of [" << kNumBins << "]." << std::endl;
+    }
 
     // label GROUND point, collect their indices.
     std::size_t binPointer = 0;
-    int unlabeled_bin = -1;
+    int non_class_bin = -1;
     ground_points_indices_.clear();
     if (!ground_bins_.empty()) {
+        /* all points of src_points_ have been sorted in an bin-index ascending order. */
         for (const auto& point : src_points_) { 
-            if (point.bin_index==unlabeled_bin) continue;
-            /* search direction: point --> bin. */
+            if (point.bin_index==non_class_bin) continue;
+            /* try to find corresponding bin index for a point. */
             if (point.bin_index!=ground_bins_[binPointer])
             {
                 while (point.bin_index!=ground_bins_[binPointer]) {
                     binPointer++;
                     if (binPointer>=ground_bins_.size()) {
                         binPointer = 0;
-                        unlabeled_bin = point.bin_index;
+                        non_class_bin = point.bin_index;
                         break;
                     }
                 }
             }
             if (point.bin_index!=ground_bins_[binPointer]) continue;
             /* now, judge whether a point belongs to ground (according to height diff). */
-            if (std::abs(point.point.z-sector_[point.bin_index].z)<kGroundPointLineDistThres) {
+            if (std::abs(point.point.z-(*sector_data_ptr_)[point.bin_index].z)<kGroundPointLineDistThres) {
                 ground_points_indices_.push_back(point.original_index);
             }
         }
@@ -313,26 +341,36 @@ void SmartSector::RunLineExtraction()
 
     // label WALL point, collect their indices. 
     binPointer = 0;
-    unlabeled_bin = -1;
+    non_class_bin = -1;
     wall_points_indices_.clear();
     if (!wall_bins_.empty()) {
         for (const auto& point : src_points_) { 
-            if (point.bin_index==unlabeled_bin) continue;
-            /* search direction: point --> bin. */
+            if (point.bin_index==non_class_bin) continue;
+            /* try to find corresponding bin index for a point. */
             if (point.bin_index!=wall_bins_[binPointer])
             {
                 while (point.bin_index!=wall_bins_[binPointer]) {
                     binPointer++;
                     if (binPointer>=wall_bins_.size()) {
                         binPointer = 0;
-                        unlabeled_bin = point.bin_index;
+                        non_class_bin = point.bin_index;
                         break;
                     }
                 }
             }
             if (point.bin_index!=wall_bins_[binPointer]) continue;
             /* now, judge whether a point belongs to wall (according to xy-range diff). */
-            if ( std::abs(point.point.intensity-sector_[point.bin_index].intensity) <kWallPointLineDistThres) {
+            float point_plane_distance = 
+                std::abs(point.point.intensity-(*sector_data_ptr_)[point.bin_index].intensity);
+            /* calculate point-to-plane distance with z=0, since xy distance is enough. */
+            if (other_sector_ptr_ != nullptr && pcl::isFinite((*other_sector_ptr_)[point.bin_index])) {
+                float x1 = point.point.x - (*sector_data_ptr_)[point.bin_index].x;
+                float y1 = point.point.y - (*sector_data_ptr_)[point.bin_index].y;
+                float x2 = (*other_sector_ptr_)[point.bin_index].x - (*sector_data_ptr_)[point.bin_index].x;
+                float y2 = (*other_sector_ptr_)[point.bin_index].y - (*sector_data_ptr_)[point.bin_index].y;
+                point_plane_distance = std::abs((x1*y2-x2*y1)/std::sqrt(x2*x2+y2*y2));
+            }
+            if ( point_plane_distance < kWallPointLineDistThres) {
                 wall_points_indices_.push_back(point.original_index);
             }
         }
@@ -342,39 +380,6 @@ void SmartSector::RunLineExtraction()
 
 std::vector<int>& SmartSector::GetGroundPointIndices()
 {
-    // ground_points_indices_.clear();
-    // if (ground_bins_.empty()) {return ground_points_indices_;}
-    // std::size_t binPointer = 0;
-    // float pointerBinHeight = sector_[ground_bins_[binPointer]].z;
-    // int unlabeled_bin = -1;
-    // ground_points_indices_.clear();
-
-    // for (const auto& point : src_points_) { 
-
-    //     if (point.bin_index==unlabeled_bin) continue;
-
-    //     // try to find corresponding bin.
-    //     if (point.bin_index!=ground_bins_[binPointer])
-    //     {
-    //         while (point.bin_index!=ground_bins_[binPointer]) {
-    //             binPointer++;
-    //             if (binPointer>=ground_bins_.size()) {
-    //                 binPointer = 0;
-    //                 pointerBinHeight = sector_[ground_bins_[binPointer]].z;
-    //                 unlabeled_bin = point.bin_index;
-    //                 break;
-    //             }
-    //             pointerBinHeight = sector_[ground_bins_[binPointer]].z;
-    //         }
-    //     }
-    //     if (point.bin_index!=ground_bins_[binPointer]) continue;
-
-    //     // now, judge whether a point belongs to ground.
-    //     if (point.point.z-sector_[point.bin_index].z<kGroundPointLineDistThres) {
-    //         ground_points_indices_.push_back(point.original_index);
-    //     }
-    // }
-
     return ground_points_indices_;
 }
 
@@ -392,26 +397,35 @@ int SmartSector::IdentifyExternalPoint(const pcl::PointXYZI& pointIn, const int&
 {
     if (binIdx<0 || binIdx>=kNumBins) {
         // TODO: warn.
-        return -1;
+        return 0;
     }
 
     for (const auto& bin : ground_bins_) {
         if (binIdx==bin) {
-            if (std::abs(pointIn.z-sector_[bin].z)<kGroundPointLineDistThres) {
-                return 0;
+            if (std::abs(pointIn.z-(*sector_data_ptr_)[bin].z)<kGroundPointLineDistThres) {
+                return 1;
             }
         }
     }
 
     for (const auto& bin : wall_bins_) {
         if (binIdx==bin) {
-            if (std::abs(pointIn.intensity-sector_[bin].intensity)<kWallPointLineDistThres) {
-                return 1;
+            float point_plane_distance = std::abs(pointIn.intensity-(*sector_data_ptr_)[bin].intensity);
+            // calculate point-to-plane distance with z=0, since xy distance is enough.
+            if (other_sector_ptr_ != nullptr && pcl::isFinite((*other_sector_ptr_)[bin])) {
+                float x1 = pointIn.x - (*sector_data_ptr_)[bin].x;
+                float y1 = pointIn.y - (*sector_data_ptr_)[bin].y;
+                float x2 = (*other_sector_ptr_)[bin].x - (*sector_data_ptr_)[bin].x;
+                float y2 = (*other_sector_ptr_)[bin].y - (*sector_data_ptr_)[bin].y;
+                point_plane_distance = std::abs((x1*y2-x2*y1)/std::sqrt(x2*x2+y2*y2));
+            }
+            if (point_plane_distance < kWallPointLineDistThres) {
+                return 2;
             }
         }
     }
 
-    return -1;
+    return 0;
 }
 
 LineLabel SmartSector::JudgeLineLAbel(SmartLine& smartLine, const std::vector<pcl::PointXYZI>& binVec)

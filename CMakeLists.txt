@@ -48,7 +48,7 @@ link_directories(
 add_executable(efficient_online_segmentation_node 
     ros_interface/efficient_online_segmentation_node.cpp
     core/efficient_online_segmentation.cpp
-    core/sector.cpp
+    core/smart_sector.cpp
     core/segmentation_utility.cpp
     core/adaptive_ground_plane_estimator.cpp
 )

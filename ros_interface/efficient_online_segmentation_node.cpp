@@ -29,14 +29,14 @@ ros::Subscriber source_cloud_subscriber;
 ros::Publisher segmted_cloud_publisher;
 ros::Publisher range_image_publisher;
 ros::Publisher extracted_lines_publisher;
-ros::Publisher debug_cloud_publisher;
-std::string base_link_frame_id = "base_link"; // default value.
-std::string lidar_frame_id = "velodyne"; // default value.
+ros::Publisher transformed_cloud_publisher;
+std::string base_link_frame_id = "base_link";   // default value.
+std::string sensor_frame_id = "velodyne";       // default value.
 
 // System variables.
 SegmentationParams params;
 EfficientOnlineSegmentation efficient_sgmtt_;
-pcl::PointCloud<pcl::PointXYZI>::Ptr original_cloud_;
+pcl::PointCloud<pcl::PointXYZI>::Ptr common_original_cloud_;
 pcl::PointCloud<PointXYZIRT>::Ptr custom_original_cloud_;
 std::vector<int> labels_;
 
@@ -72,7 +72,6 @@ bool LoadAlgorithmParams(::ros::NodeHandle& node_handle, SegmentationParams& par
     node_handle.param<int>("kLidarRows", params.kLidarRows, params.kLidarRows);
     node_handle.param<int>("kLidarCols", params.kLidarCols, params.kLidarCols);
     node_handle.param<int>("kNumSectors", params.kNumSectors, params.kNumSectors);
-    node_handle.param<float>("kSensorHeight", params.kSensorHeight, params.kSensorHeight);
     node_handle.param<float>("kGroundYInterceptTolerance", params.kGroundYInterceptTolerance, 
                                                         params.kGroundYInterceptTolerance);
     node_handle.param<float>("kGroundPointLineDistThres", params.kGroundPointLineDistThres, 
@@ -81,6 +80,11 @@ bool LoadAlgorithmParams(::ros::NodeHandle& node_handle, SegmentationParams& par
                                                     params.kWallLineMinBinNum);
     node_handle.param<float>("kWallPointLineDistThres", params.kWallPointLineDistThres, 
                                                         params.kWallPointLineDistThres);
+    std::vector<float> ext_trans_vec, ext_rot_vec;
+    node_handle.param<std::vector<float>>("kExtrinsicTrans", ext_trans_vec, std::vector<float>());
+    node_handle.param<std::vector<float>>("kExtrinsicRot", ext_rot_vec, std::vector<float>());
+    params.kExtrinsicTrans = Eigen::Map<const Eigen::Matrix<float, -1, -1, Eigen::RowMajor>>(ext_trans_vec.data(), 3, 1);
+    params.kExtrinsicRot = Eigen::Map<const Eigen::Matrix<float, -1, -1, Eigen::RowMajor>>(ext_rot_vec.data(), 3, 3);
 
     // load params in degree (need to be converted).
     LoadAndConvertDegToRad(node_handle, "kLidarHorizRes", params.kLidarHorizRes);
@@ -88,8 +92,6 @@ bool LoadAlgorithmParams(::ros::NodeHandle& node_handle, SegmentationParams& par
     LoadAndConvertDegToRad(node_handle, "kLidarVertFovMax", params.kLidarVertFovMax);
     LoadAndConvertDegToRad(node_handle, "kLidarVertFovMin", params.kLidarVertFovMin);
     LoadAndConvertDegToRad(node_handle, "kLidarProjectionError", params.kLidarProjectionError);
-    LoadAndConvertDegToRad(node_handle, "kSensorRoll", params.kSensorRoll);
-    LoadAndConvertDegToRad(node_handle, "kSensorPitch", params.kSensorPitch);
     LoadAndConvertDegToSlope(node_handle, "kGroundSameLineTolerance", params.kGroundSameLineTolerance);
     LoadAndConvertDegToSlope(node_handle, "kGroundSlopeTolerance", params.kGroundSlopeTolerance);
     LoadAndConvertDegToSlope(node_handle, "kWallSameLineTolerance", params.kWallSameLineTolerance);
@@ -111,22 +113,22 @@ void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr& msg)
             if (field.name == "ring")
             {
                 ring_field_exists = true;
-                std::cout << "###### Congrats, `ring` field exists!" << std::endl;
+                std::cout << "########## Congrats, `ring` field exists!" << std::endl;
                 continue;
             }
             if (field.name == "time" || field.name == "t")
             {
                 time_field_exists = true;
-                std::cout << "###### Congrats, `time` field exists!" << std::endl;
+                std::cout << "########## Congrats, `time` field exists!" << std::endl;
                 continue;
             }
 
         }
         if (!ring_field_exists) {
-            std::cout << "###### Could not found `ring` field .... " << std::endl;
+            std::cout << "########## Could not found `ring` field. " << std::endl;
         }
         if (!time_field_exists) {
-            std::cout << "###### Could not found `time` field .... " << std::endl;
+            std::cout << "########## Could not found `time` field. " << std::endl;
         }
         need_check_fields = false;
     }
@@ -140,8 +142,8 @@ void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr& msg)
         efficient_sgmtt_.Segment(custom_original_cloud_, &labels_, true);
     }
     else {
-        pcl::fromROSMsg(*msg, *original_cloud_); 
-        efficient_sgmtt_.Segment(original_cloud_, &labels_, true);
+        pcl::fromROSMsg(*msg, *common_original_cloud_); 
+        efficient_sgmtt_.Segment(common_original_cloud_, &labels_, true);
     }
     
 
@@ -151,8 +153,8 @@ void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr& msg)
         static tf::TransformBroadcaster tf_broadcaster;
         tf_msg.stamp_ = msg->header.stamp;
         tf_msg.frame_id_ = base_link_frame_id;
-        tf_msg.child_frame_id_ = lidar_frame_id;
-        Eigen::Quaternionf rot_quat(params.kBaseToSensor.rotation().normalized());
+        tf_msg.child_frame_id_ = sensor_frame_id;
+        Eigen::Quaternionf rot_quat(params.kBaseToSensor.rotation());
         Eigen::Vector3f trans = params.kBaseToSensor.translation();
         tf_msg.setRotation(tf::Quaternion(rot_quat.x(), rot_quat.y(), rot_quat.z(), rot_quat.w()));
         tf_msg.setOrigin(tf::Vector3(trans.x(), trans.y(), trans.z()));
@@ -162,23 +164,28 @@ void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr& msg)
     // Visualize results.
     if (segmted_cloud_publisher.getNumSubscribers() != 0){
         sensor_msgs::PointCloud2 cloudMsgTemp;
-        if (original_cloud_->size()>0) {
-            pcl::toROSMsg(*original_cloud_, cloudMsgTemp);
+        if (common_original_cloud_->size()>0) {
+            pcl::toROSMsg(*common_original_cloud_, cloudMsgTemp);
         }
         else {
             pcl::toROSMsg(*custom_original_cloud_, cloudMsgTemp);
         }
         cloudMsgTemp.header = msg->header;
-        cloudMsgTemp.header.frame_id = lidar_frame_id;
+        cloudMsgTemp.header.frame_id = sensor_frame_id;
         segmted_cloud_publisher.publish(cloudMsgTemp);
     }
 
-    if (debug_cloud_publisher.getNumSubscribers() != 0){
+    if (transformed_cloud_publisher.getNumSubscribers() != 0){
         sensor_msgs::PointCloud2 cloudMsgTemp;
-        pcl::toROSMsg(*efficient_sgmtt_.GetTransformedCloud(), cloudMsgTemp);
+        if (ring_field_exists) {
+            pcl::toROSMsg(*efficient_sgmtt_.GetTransformedCustomCloud(), cloudMsgTemp);
+        }
+        else {
+            pcl::toROSMsg(*efficient_sgmtt_.GetTransformedCommonCloud(), cloudMsgTemp);
+        }
         cloudMsgTemp.header = msg->header;
         cloudMsgTemp.header.frame_id = base_link_frame_id;
-        debug_cloud_publisher.publish(cloudMsgTemp);
+        transformed_cloud_publisher.publish(cloudMsgTemp);
     }
 
     if (range_image_publisher.getNumSubscribers() != 0){
@@ -269,7 +276,7 @@ int main(int argc, char** argv) {
         node_handle.param<std::string>("pub_rangeimage_topic", pub_rangeimage_topic, "/EOS_range_image");
         node_handle.param<std::string>("pub_extractedlines_topic", pub_extractedlines_topic, "/EOS_extracted_lines");
         node_handle.param<std::string>("base_link_frame_id", base_link_frame_id, base_link_frame_id);
-        node_handle.param<std::string>("lidar_frame_id", lidar_frame_id, lidar_frame_id);
+        node_handle.param<std::string>("sensor_frame_id", sensor_frame_id, sensor_frame_id);
 
         source_cloud_subscriber = node_handle.subscribe<sensor_msgs::PointCloud2>
             (sub_cloud_topic, 1, &pointCloudCallback); 
@@ -279,14 +286,22 @@ int main(int argc, char** argv) {
             (pub_rangeimage_topic, 1);
         extracted_lines_publisher = node_handle.advertise<visualization_msgs::MarkerArray>
             (pub_extractedlines_topic,1);
-        debug_cloud_publisher = node_handle.advertise<sensor_msgs::PointCloud2>
-            ("EOS_debug_cloud", 1);
+        transformed_cloud_publisher = node_handle.advertise<sensor_msgs::PointCloud2>
+            ("/EOS_transformed_cloud", 1);
 
         LoadAlgorithmParams(node_handle, params);
-        params.UpdateInternalParams();
+        bool is_params_legal = params.UpdateInternalParams();
+        if (!is_params_legal) {
+            std::cout << "###################### ERROR! ###################### " << std::endl;
+            std::cout << "## Parameters illegal, please check!!! " << std::endl;
+            std::cout << "###################### ERROR! ###################### " << std::endl 
+                << std::endl << std::endl << std::endl;
+            ::ros::shutdown();
+            return 0;
+        }
         efficient_sgmtt_.ResetParameters(params);
 
-        original_cloud_.reset(new pcl::PointCloud<pcl::PointXYZI>());
+        common_original_cloud_.reset(new pcl::PointCloud<pcl::PointXYZI>());
         custom_original_cloud_.reset(new pcl::PointCloud<PointXYZIRT>());
     }
 
