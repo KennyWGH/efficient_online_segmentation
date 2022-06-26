@@ -2,18 +2,18 @@
 
 ## Update 20220625（中文）
 1. 所有参数已支持通过`yaml`文件配置！
-2. 在提取`墙面点`时，引入了法向量信息，支持**大入射角**时墙面点的准确提取。
-3. 支持**任意线数**的**旋转式机械激光雷达**，已用**16线**和**32线**激光雷达数据充分测试（32线所用测试数据集[UrbanLoco](https://github.com/weisongwen/UrbanLoco)HK-Data20190117）。`yaml`文件已预置了`VLP-16`和`HDL-32e`两型激光雷达的参数，可直接使用。
-4. 支持激光雷达以**任意姿态**安装，而不仅仅是水平姿态，只需要在`yaml`文件中配置好`kExtrinsicRot`和`kExtrinsicTrans`即可。
-5. 添加了外参`旋转矩阵`的`单位正交属性检查`，如果非单位正交阵，程序报错并退出。
+2. 在提取**墙面点**时，引入了**法向量**信息，支持大入射角时墙面点的准确提取。
+3. 支持**任意线数的旋转式机械激光雷达**，已用**16线**和**32线**激光雷达数据充分测试（32线所用测试数据集 [UrbanLoco](https://github.com/weisongwen/UrbanLoco)/HK-Data20190117）。`yaml`文件已预置了`VLP-16`和`HDL-32e`两型激光雷达的参数，可直接使用。
+4. 支持激光雷达**以任意姿态安装**，而不仅仅是水平姿态，只需要在`yaml`文件中配置好`kExtrinsicRot`和`kExtrinsicTrans`即可。
+5. 添加了外参**旋转矩阵的单位正交属性检查**，如果非单位正交阵，程序报错并退出。
 6. 新版的测试视频即将发布。
 
 ## Update 20220625 (English)
-1. Now you can configure **all the parameters** simply through a `segmentation_params.yaml` file!
-2. Take **normal info** into consideration when identifying **wall points**, which has proven to be very usefull especially with **large incident angle**!
-3. Support `Multi-Line Spinning LiDAR` with **any lines**! Just modify LiDAR related parameters in `yaml` file. For now, 16-line and 32-line LiDARs, taking `VLP-16` and `HDL-32` as examples respectively, have been fully tested with home-made dataset and [UrbanLoco dataset](https://github.com/weisongwen/UrbanLoco)(HK-Data20190117).  
+1. Now you can configure all the parameters simply through a `segmentation_params.yaml` file!
+2. Take **normal info** into consideration when **identifying wall points**, which has proven to be very usefull especially with large incident angle!
+3. **Support Multi-Line Spinning LiDAR with any lines**! Just modify LiDAR related parameters in `yaml` file. For now, 16-line and 32-line LiDARs, taking `VLP-16` and `HDL-32` as examples respectively, have been fully tested with home-made dataset and [UrbanLoco dataset](https://github.com/weisongwen/UrbanLoco)(HK-Data20190117).  
 4. You can **mount your LiDAR in any pose**, not just horizentally. All you need to do is re-write `kExtrinsicRot` and `kExtrinsicTrans` in `yaml` file.
-5. Check whether the input rotation matrix is a `special orthogonal matrix`(SO3 group), if not, the program report error and return.
+5. Check whether the **input rotation matrix** is a special orthogonal matrix(SO3 group), if not, the program report error and return.
 6. New test vedio coming soon.  
   
 **UrbanLoco测试截图(Here is a screenshot of test on UrbanLoco dataset):**
